@@ -1,0 +1,257 @@
+---
+title: "IUGR_DE_analysis"
+author: "Caroline Porter"
+date: "4/15/2021"
+output: html_document
+---
+```{r setup, include=TRUE}
+rm(list=ls())
+
+date <- "DE_genes_01_28_21_v2"
+
+library(dplyr)
+library(DropletUtils)
+library(Seurat)
+
+project.path <- '/path/to/output/directory/IUGR'
+dir.create(save.path, recursive = TRUE)
+
+source("/path/to/supporting/functions/de_genes_mixed_effects_IUGR.R")
+source("/path/to/supporting/functions/de_genes_pseudobulk_IUGR.R")
+
+
+```
+
+```{r pseudobulk_10xNK, include=TRUE}
+load(paste0(project.path, '/FinalDataObjects/gcdata_08072018_10x_NK_umap_Seurat3.Rda')) 
+Idents(gcdata.NK)<-gcdata.NK@meta.data$res.0.4
+
+# Split into one Seurat object per cluster 
+gcdata.ident.split <- SplitObject(gcdata.NK, split.by = 'ident')
+
+save.path.sub <- paste0(save.path, '/DESeq2_10xNK/')
+dir.create(save.path.sub)
+
+ext = "_10pct_10xNK"
+
+for (i in names(gcdata.ident.split)){
+        
+      # Seurat object for current cluster
+      gcdata.cluster <- gcdata.ident.split[[i]]
+       
+      # KIRF_C5M vs WTF_C5M
+      cond1 <- "WTF_C5M"
+      cond2 <- "KIRF_C5M"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+      
+      # KIRF_C5M vs KIRC5F_WTM
+      cond1 <- "KIRC5F_WTM"
+      cond2 <- "KIRF_C5M"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+
+      # KIRC5F_WTM vs WTF_C5M
+      cond1 <- "WTF_C5M"
+      cond2 <- "KIRC5F_WTM"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+
+}
+
+```
+
+
+```{r pseudobulk_10xTD, include=TRUE}
+load(paste0(project.path, '/FinalDataObjects/gcdata.TD_p50_02072018_10x_TD_gk_SMALL_USE_THIS_umap_Seurat3.Rda'))
+Idents(gcdata)<-gcdata@meta.data$res.0.6
+
+# Split into one Seurat object per cluster
+gcdata.ident.split <- SplitObject(gcdata, split.by = 'ident')
+
+save.path.sub <- paste0(save.path, '/DESeq2_10xTD/')
+dir.create(save.path.sub)
+
+ext = "_10pct_10xTD"
+
+for (i in names(gcdata.ident.split)){
+        
+      # Seurat object for current cluster
+      gcdata.cluster <- gcdata.ident.split[[i]]
+       
+      # KIRF_C5M vs WTF_C5M
+      cond1 <- "WTF_C5M"
+      cond2 <- "KIRF_C5M"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+      
+      # KIRF_C5M vs KIRC5F_WTM
+      cond1 <- "KIRC5F_WTM"
+      cond2 <- "KIRF_C5M"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+
+      # KIRC5F_WTM vs WTF_C5M
+      cond1 <- "WTF_C5M"
+      cond2 <- "KIRC5F_WTM"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+     
+}
+
+```
+
+```{r pseudobulk_ss2NK, include=TRUE}
+load(paste0(project.path, '/FinalDataObjects/allNK_ss2_countData_02162018_umap_countsAdded_Seurat3_04152021.rda')) 
+
+# Add metadata column accessed by the DE function 
+gcdata@meta.data$genotype <- gcdata@meta.data$phenotype
+
+# Split to one seurat object per cluster (ident); Idents already saved as correct clustering resolution 
+gcdata.ident.split <- SplitObject(gcdata, split.by = 'ident')
+
+save.path.sub <- paste0(save.path, '/DESeq2_ss2NK/')
+dir.create(save.path.sub)
+
+ext = "_10pct_ss2NK"
+
+for (i in names(gcdata.ident.split)){
+        
+      # Seurat object for current cluster
+      gcdata.cluster <- gcdata.ident.split[[i]]
+      
+      # Round counts so they are integers (only needed because this is SS2 data)
+      gcdata.cluster@assays$RNA@counts <- round(gcdata.cluster@assays$RNA@counts)
+       
+      # KIRF_C5M vs WTF_C5M
+      cond1 <- "WTF_C5M"
+      cond2 <- "KIRF_C5M"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+      
+      # KIRF_C5M vs KIRC5F_WTM
+      cond1 <- "KIRC5F_WTM"
+      cond2 <- "KIRF_C5M"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+
+      # KIRC5F_WTM vs WTF_C5M
+      cond1 <- "WTF_C5M"
+      cond2 <- "KIRC5F_WTM"
+      de_genes_pseudobulk_IUGR(gcdata.cluster, cond1, cond2, save.path.sub, i, ext)
+     
+}
+
+```
+
+```{r mixedEffects_10xNK, include=TRUE}
+# Load the 10xNK Seurat object 
+load(paste0(project.path, '/FinalDataObjects/gcdata_08072018_10x_NK_umap_Seurat3.Rda')) 
+
+# Set idents slot to be final clustering resolution and split to one seurat object per cluster (ident) 
+Idents(gcdata.NK)<-gcdata.NK@meta.data$res.0.4 
+gcdata.ident.split <- SplitObject(gcdata.NK, split.by = 'ident')
+
+save.path.sub <- paste0(save.path, '/10xNK_poissonMixedEffects_mouseCov/')
+dir.create(save.path.sub)
+
+# Loop through each cluster and find DE genes between each pairwise condition in each cluster using mixed mffect model 
+for (i in names(gcdata.ident.split)){
+        
+        # Seurat object for current cluster
+        gcdata.cluster <- gcdata.ident.split[[i]]
+
+        # KIRF_C5M vs WTF_C5M
+        cond2 <- "WTF_C5M"
+        cond1 <- "KIRF_C5M"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_10xNK.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+
+        # KIRF_C5M vs KIRC5F_WTM
+        cond2 <- "KIRC5F_WTM"
+        cond1 <- "KIRF_C5M"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_10xNK.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+
+        # KIRC5F_WTM vs WTF_C5M
+        cond2 <- "WTF_C5M"
+        cond1 <- "KIRC5F_WTM"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_10xNK.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+        
+}
+
+```
+
+```{r mixedEffects_10xTD, include=TRUE}
+load(paste0(project.path, '/FinalDataObjects/gcdata.TD_p50_02072018_10x_TD_gk_SMALL_USE_THIS_umap_Seurat3.Rda'))
+
+# Set idents slot to be final clustering resolution and split to one seurat object per cluster (ident) 
+Idents(gcdata)<-gcdata@meta.data$res.0.6
+gcdata.ident.split <- SplitObject(gcdata, split.by = 'ident')
+
+save.path.sub <- paste0(save.path, '/10xTD_poissonMixedEffects_mouseCov/')
+dir.create(save.path.sub)
+
+# For some clusters in the unsorted dataset, I had to manually exclude a small number of genes for which the mixed effect
+# model failed; code has not been updated with a try/catch to automatically handle these situations 
+for (i in names(gcdata.ident.split)){
+  
+        # Seurat object for current cluster
+        gcdata.cluster <- gcdata.ident.split[[i]]
+
+        # KIRF_C5M vs WTF_C5M
+        cond2 <- "WTF_C5M"
+        cond1 <- "KIRF_C5M"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_10xTD.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+
+        # KIRF_C5M vs KIRC5F_WTM
+        cond2 <- "KIRC5F_WTM"
+        cond1 <- "KIRF_C5M"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_10xTD.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+
+        # KIRC5F_WTM vs WTF_C5M
+        cond2 <- "WTF_C5M"
+        cond1 <- "KIRC5F_WTM"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_10xTD.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+        
+}
+
+```
+
+```{r mixedEffects_ss2NK, include=TRUE}
+load(paste0(project.path, '/FinalDataObjects/allNK_ss2_countData_02162018_umap_countsAdded_Seurat3_04152021.rda')) 
+
+# Add metadata column accessed by the DE function 
+gcdata@meta.data$genotype <- gcdata@meta.data$phenotype
+
+# Split to one seurat object per cluster (ident); Idents already saved as correct clustering resolution 
+gcdata.ident.split <- SplitObject(gcdata, split.by = 'ident')
+
+save.path.sub <- paste0(save.path, '/ssNK_poissonMixedEffect_mouseCov')
+dir.create(save.path.sub)
+
+for (i in names(gcdata.ident.split)){
+        
+        # Seurat object for current cluster
+        gcdata.cluster <- gcdata.ident.split[[i]]
+        
+        # Round counts so they are integers (only needed because this is SS2 data)
+        gcdata.cluster@assays$RNA@counts <- round(gcdata.cluster@assays$RNA@counts)
+
+        # KIRF_C5M vs WTF_C5M
+        cond2 <- "WTF_C5M"
+        cond1 <- "KIRF_C5M"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_ss2NK.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+
+        # KIRF_C5M vs KIRC5F_WTM
+        cond2 <- "KIRC5F_WTM"
+        cond1 <- "KIRF_C5M"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_ss2NK.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+
+        # KIRC5F_WTM vs WTF_C5M
+        cond2 <- "WTF_C5M"
+        cond1 <- "KIRC5F_WTM"
+        filename <- paste0(save.path.sub, '/poissonMixed_nUMI_mouseCov_', cond1, '_vs_', cond2, '_cluster', i, '_10pct_ss2NK.csv')
+        de_genes_mixed_effects_IUGR(gcdata.cluster, cond1, cond2, filename)
+    
+}
+
+```

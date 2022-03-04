@@ -1,0 +1,193 @@
+---
+title: "topic_modeling_IUGR"
+author: "Caroline Porter"
+date: "4/22/2021"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+
+library(CountClust)
+library(Seurat)
+library(data.table)
+
+user.path <- source("/path/to/supporting/functions/plot.umap.feature_seurat3.R")
+project.path <- '/path/to/output/directory/IUGR'
+
+# Set up paths and folder extensions 
+date <- '1162018_10x_NK_topicModeling_withRibo'
+
+# Set working directory
+save.path <- paste0(paste0(project.path, "/results/"), date)
+save.path <- paste0(project.path, '/final_code_test_results/', date, '/')
+
+dir.create(save.path)
+
+```
+
+
+```{r topicModeling, eval=TRUE}
+
+# choosing k: used k=16 for this IUGR analysis
+k = 16
+
+# choosing t: used tolerance=0.01 for this IUGR analysis
+t = 0.01
+
+# load 10x NK dataset as Seurat object 
+load(paste0(project.path, '/FinalDataObjects/gcdata_08072018_10x_NK_umap_Seurat3.Rda'))
+
+# make sure raw data is properly subsetted 
+gcdata <- subset(gcdata, cells = colnames(gcdata[["RNA"]]@data))
+
+# set parameters for topic modeling 
+n.topics <- as.numeric(k) # is supplied as input to this function 
+tolerance <- as.numeric(t) # is supplied as input to this function 
+
+# Create directory for saving output 
+sub.dir <- paste0(n.topics, "topics_tol", tolerance)
+dir.create(paste0(save.path, '/', sub.dir))
+                        
+# fit topic model, saves as .rda file
+FitGoM(t(as.matrix(gcdata[["RNA"]]@counts)),
+       K=n.topics, tol=tolerance, num_trials = 3,
+       path_rda=paste0(save.path, '/', sub.dir, '/FitGoM_k', n.topics,
+                       '_tol', tolerance, '.rda'))
+
+# load the topic modeling results 
+load(paste0(save.path, '/', sub.dir, '/FitGoM_k', n.topics,
+            '_tol', tolerance, '.rda'))
+
+# assign topic modeling scores for each cell (contribution of each topic to that cell) to matrix omega 
+omega <- as.data.frame(Topic_clus$omega)
+colnames(omega)<-paste0("Topic_", colnames(omega))
+
+# add the omega scores to the meta data 
+gcdata <- AddMetaData(gcdata, omega)
+
+# plot on UMAP, with individual scales for each plot, and capping the color scale so that outliers don't dominate
+
+# list of topic names 
+tp <- colnames(gcdata@meta.data[paste0("Topic_", seq(1:n.topics))])
+
+# find the outliers 
+outlier <- lapply(tp, function(x) which(gcdata@meta.data[,x]>(2*sd(gcdata@meta.data[,x])+mean(gcdata@meta.data[,x]))))
+names(outlier) <- tp
+
+# find the max value of the data when outliers are ignored 
+max.nooutlier <- lapply(tp, function(x) if(length(unlist(outlier[x])))
+        {ceiling(10*max(gcdata@meta.data[-unlist(outlier[x]),x]))/10}
+        else{ceiling(10*max(gcdata@meta.data[,x]))/10})
+names(max.nooutlier) <- tp
+
+# generate list of plots 
+p <- lapply(tp, function(x) plot.umap.feature(gcdata, x, "meta", 
+                                              pt.size=0.8, ncols=1, title="weight", 
+                                              lower=0, upper=unlist(max.nooutlier[x]), 
+                                              na.color="#CD0000"))
+
+
+# arrange plots on a grid 
+cowplot::plot_grid(plotlist=p, ncol=3)
+
+# set figure height & save grid of plots  
+h = max(4, n.topics)
+ggsave(paste0(save.path, '/', sub.dir, '/topics_on_UMAP_', n.topics,
+              '_tol', tolerance, '.png'), width=10, height=h, units="in")
+
+# collect gene scores for each topic - the amount that gene contributes to that topic 
+theta <- as.data.frame(Topic_clus$theta)
+colnames(theta)<-paste0("Topic_", colnames(theta))
+
+features <- ExtractTopFeatures(theta, top_features=50, options="min", shared=TRUE, method = "poisson")
+features.genes <- as.data.frame(sapply(1:n.topics, function(x) rownames(theta)[features$indices[x,]]))
+colnames(features.genes) <- paste0("topic_", seq(1:n.topics))
+features.scores <- as.data.frame(features$scores)
+rownames(features.scores) <- paste0("topic_", seq(1:n.topics))
+write.csv(features.genes, paste0(save.path, '/', sub.dir, '/top50features_sharedGenes.csv'))
+
+# top features bar plots 
+plot.features <- data.frame()
+for (j in 1:nrow(features.scores)){
+        
+        current.topic <- as.data.frame(t(features.scores[j,]))
+        colnames(current.topic) <- "score"
+        rownames(current.topic) <- features.genes[,j]
+        current.topic$genes <- features.genes[,j]
+        current.topic.top <- current.topic[1:20,]
+        current.topic.top$topic <- rep(colnames(features.genes)[j], nrow(current.topic.top))
+        current.topic.top$genes <- factor(current.topic.top$genes, levels=rev(current.topic.top$genes))
+        current.topic.top$order <- paste0(current.topic.top$genes, "_", current.topic.top$topic)
+        current.topic.top$order <- factor(current.topic.top$order, levels=rev(current.topic.top$order))
+        
+        plot.features <- rbind(plot.features,current.topic.top)
+}
+
+# turn levels entry into a factor so that plots stay in numerical rather than alaphabetical order 
+# scale the gene scores for better visualization 
+scalefactor <- 100000000
+plot.features$topic <- factor(plot.features$topic, levels=unique(plot.features$topic))
+plot.features$scaled <- plot.features$score*scalefactor # For visualization purposes 
+plot.features$scaled <- log10(plot.features$scaled) # For visualization purposes 
+
+############# generate scaled bar plots  
+scaleFUN <- function(x) sprintf("%.1f", x)
+high <- ceiling(max(plot.features$scaled))
+p <-ggplot(data=plot.features, aes(x=order, y=scaled)) +
+        geom_bar(stat="identity") + 
+        coord_flip() + 
+        theme(axis.text.x = element_text(angle=45, hjust=1), 
+              axis.text=element_text(size=8), text=element_text(size=10), 
+              axis.line = element_line(colour = "black"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border = element_blank(),
+              panel.background = element_blank()) +
+        facet_wrap(~topic, scales="free", ncol=3) + 
+        scale_x_discrete(breaks=plot.features$order, labels=plot.features$genes) + 
+        scale_y_continuous(labels = scaleFUN, breaks = seq(0,high, by=high/4))
+p
+
+# set height parameter based on number of topics 
+h = max(n.topics*1.25, 7)
+
+# save plot
+ggsave(paste0(save.path, '/', sub.dir, '/topic_FEATURES_barplots_scaled_k', n.topics,
+              '_tol', tolerance, '.png'),width=7, height=h, units="in")
+
+########### generate not-scaled bar plots  
+p <-ggplot(data=plot.features, aes(x=order, y=score)) +
+        geom_bar(stat="identity") + 
+        coord_flip() + 
+        theme(axis.text.x = element_text(angle=45, hjust=1), 
+              axis.text=element_text(size=8), text=element_text(size=10), 
+              axis.line = element_line(colour = "black"),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              panel.border = element_blank(),
+              panel.background = element_blank()) +
+        facet_wrap(~topic, scales="free", ncol=3) + 
+        scale_x_discrete(breaks=plot.features$order, labels=plot.features$genes) 
+p
+
+# set height parameter based on number of topics 
+h = max(n.topics*1.25, 7)
+
+# save plot
+ggsave(paste0(save.path, '/', sub.dir, '/topic_FEATURES_barplots_k', n.topics,
+              '_tol', tolerance, '.png'),width=7, height=h, units="in")
+
+
+# save theta and omega
+write.csv(omega, paste0(save.path, '/', sub.dir, '/omega_k', n.topics,
+                        '_tol', tolerance, '.csv'))
+write.csv(theta, paste0(save.path, '/', sub.dir, '/theta_k', n.topics,
+                        '_tol', tolerance, '.csv'))
+
+
+## remove topic modeling data from meta data to faciliate trying other parameters 
+topic.loc <- grep("Topic", colnames(gcdata@meta.data))
+gcdata@meta.data <- gcdata@meta.data[,-topic.loc]
+        
+
+```
