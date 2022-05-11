@@ -1,4 +1,4 @@
-**Parental-fetal interplay of immune genes leads to fetal growth restriction** 
+**Fetal growth restriction through parental and fetal immune gene variation and intercellular communications cascade** 
 
 Code for FGR/IUGR analyses:
 
